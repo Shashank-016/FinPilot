@@ -57,9 +57,39 @@ export type Transaction = {
   amount: number;
   type: "income" | "expense" | string;
   category_id: string | null;
+  category_name: string | null;
   description: string | null;
   transaction_date: string;
   created_at: string;
+  source: string | null;
+  needs_review: boolean;
+  transaction_time: string | null;  // "HH:MM" in 24h, from email body
+};
+
+export type Category = {
+  id: string;
+  name: string;
+  type: string;
+};
+
+export type ChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type Budget = {
+  id: string;
+  user_id: string;
+  category_name: string;
+  monthly_limit: number;
+  created_at: string;
+};
+
+export type BudgetSuggestion = {
+  category_name: string;
+  suggested_limit: number;
+  based_on_months: number;
 };
 
 export type AssistantSnapshot = {

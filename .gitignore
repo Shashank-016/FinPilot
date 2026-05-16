@@ -2,8 +2,10 @@ __pycache__/
 *.py[cod]
 .env
 venv/
+venv_new/
 .codex_venv/
 .codex_deps/
 frontend/node_modules/
 frontend/dist/
 frontend/*.tsbuildinfo
+.claude/

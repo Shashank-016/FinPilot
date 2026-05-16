@@ -33,7 +33,7 @@ def parse_hdfc_statement(file):
         raise ValueError(f"Missing columns in statement: {', '.join(sorted(missing_columns))}")
 
     df = df[df["date"].notna()].copy()
-    df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce")
+    df["date"] = pd.to_datetime(df["date"], format="mixed", dayfirst=True, errors="coerce")
     df["description"] = df["description"].fillna("")
 
     df["debit"] = _to_amount(df["debit"])

@@ -1,24 +1,35 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 
-import { createGoal, createTransaction, createUser, generateInsights } from "../api/assistant";
+import { createGoal, createTransaction, createUser, generateInsights, uploadTransactions } from "../api/assistant";
+
+export type ModalMode = "profile" | "income" | "expense" | "goal" | "upload" | null;
+
+type AppScreen = "overview" | "goals" | "transactions" | "categories" | "insights" | "assistant";
 
 type ActionBarProps = {
+  activeScreen: AppScreen;
+  modalMode: ModalMode;
+  onModalModeChange: (mode: ModalMode) => void;
   userId: string;
   onUserChange: (userId: string) => void;
   onRefresh: (userId?: string) => Promise<void>;
 };
 
-type ModalMode = "profile" | "income" | "expense" | "goal" | null;
-
 const today = new Date().toISOString().slice(0, 10);
 
-export function ActionBar({ userId, onUserChange, onRefresh }: ActionBarProps) {
-  const [mode, setMode] = useState<ModalMode>(null);
+export function ActionBar({
+  activeScreen,
+  modalMode,
+  onModalModeChange,
+  userId,
+  onUserChange,
+  onRefresh,
+}: ActionBarProps) {
   const [status, setStatus] = useState("Ready");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function refreshInsights() {
-    await run("Refreshing insights...", async () => {
+    await run("Refreshing…", async () => {
       await generateInsights(userId);
       await onRefresh(userId);
       setStatus("Insights refreshed");
@@ -37,34 +48,40 @@ export function ActionBar({ userId, onUserChange, onRefresh }: ActionBarProps) {
     }
   }
 
+  const buttons = getScreenButtons(activeScreen);
+
   return (
     <>
       <section className="action-strip">
         <div className="action-buttons">
-          <button className="secondary-button" onClick={() => setMode("profile")} type="button">
-            New Profile
-          </button>
-          <button onClick={() => setMode("income")} type="button">
-            + Income
-          </button>
-          <button onClick={() => setMode("expense")} type="button">
-            + Expense
-          </button>
-          <button onClick={() => setMode("goal")} type="button">
-            + Goal
-          </button>
-          <button className="secondary-button" disabled={isSubmitting} onClick={refreshInsights} type="button">
-            Refresh Insights
-          </button>
+          {buttons.includes("income") && (
+            <button onClick={() => onModalModeChange("income")} type="button">+ Income</button>
+          )}
+          {buttons.includes("expense") && (
+            <button onClick={() => onModalModeChange("expense")} type="button">+ Expense</button>
+          )}
+          {buttons.includes("upload") && (
+            <button className="secondary-button" onClick={() => onModalModeChange("upload")} type="button">
+              Upload Statement
+            </button>
+          )}
+          {buttons.includes("goal") && (
+            <button onClick={() => onModalModeChange("goal")} type="button">+ Goal</button>
+          )}
+          {buttons.includes("refresh") && (
+            <button className="secondary-button" disabled={isSubmitting} onClick={refreshInsights} type="button">
+              Refresh Insights
+            </button>
+          )}
         </div>
-        <small>{status}</small>
+        {status !== "Ready" && <small className="action-status">{status}</small>}
       </section>
 
-      {mode ? (
+      {modalMode ? (
         <ActionModal
           isSubmitting={isSubmitting}
-          mode={mode}
-          onClose={() => setMode(null)}
+          mode={modalMode}
+          onClose={() => onModalModeChange(null)}
           onRefresh={onRefresh}
           onRun={run}
           onUserChange={onUserChange}
@@ -75,6 +92,14 @@ export function ActionBar({ userId, onUserChange, onRefresh }: ActionBarProps) {
       ) : null}
     </>
   );
+}
+
+function getScreenButtons(screen: AppScreen): string[] {
+  if (screen === "overview")     return ["income", "expense", "refresh"];
+  if (screen === "goals")        return ["goal", "refresh"];
+  if (screen === "transactions") return ["income", "expense", "upload"];
+  if (screen === "insights")     return ["refresh"];
+  return [];
 }
 
 type ActionModalProps = {
@@ -109,10 +134,11 @@ function ActionModal({
   const [targetAmount, setTargetAmount] = useState("150000");
   const [currentAmount, setCurrentAmount] = useState("10000");
   const [deadline, setDeadline] = useState("2026-12-31");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function submitProfile(event: FormEvent) {
     event.preventDefault();
-    await onRun("Creating profile...", async () => {
+    await onRun("Creating profile…", async () => {
       const user = await createUser({ name, email });
       onUserChange(user.id);
       await onRefresh(user.id);
@@ -127,7 +153,7 @@ function ActionModal({
   }
 
   async function saveTransaction(closeAfterSave: boolean) {
-    await onRun(`Adding ${mode}...`, async () => {
+    await onRun(`Adding ${mode}…`, async () => {
       await createTransaction({
         user_id: userId,
         amount: Number(amount),
@@ -150,7 +176,7 @@ function ActionModal({
 
   async function submitGoal(event: FormEvent) {
     event.preventDefault();
-    await onRun("Adding goal...", async () => {
+    await onRun("Adding goal…", async () => {
       await createGoal({
         user_id: userId,
         name: goalName,
@@ -160,7 +186,20 @@ function ActionModal({
       });
       await generateInsights(userId);
       await onRefresh(userId);
-      setStatus("Added goal");
+      setStatus("Goal added");
+      onClose();
+    });
+  }
+
+  async function submitUpload(event: FormEvent) {
+    event.preventDefault();
+    const file = fileInputRef.current?.files?.[0];
+    if (!file) return;
+    await onRun("Uploading…", async () => {
+      const result = await uploadTransactions(userId, file);
+      await generateInsights(userId);
+      await onRefresh(userId);
+      setStatus(`Imported ${result.inserted} transactions`);
       onClose();
     });
   }
@@ -174,7 +213,7 @@ function ActionModal({
             <h2>{modalTitle(mode)}</h2>
           </div>
           <button className="icon-button" onClick={onClose} type="button" aria-label="Close">
-            x
+            ✕
           </button>
         </div>
         <p className="drawer-status">{status}</p>
@@ -183,11 +222,11 @@ function ActionModal({
           <form className="modal-form" onSubmit={submitProfile}>
             <label>
               Name
-              <input value={name} onChange={(event) => setName(event.target.value)} required />
+              <input value={name} onChange={(e) => setName(e.target.value)} required />
             </label>
             <label>
               Email
-              <input value={email} onChange={(event) => setEmail(event.target.value)} required type="email" />
+              <input value={email} onChange={(e) => setEmail(e.target.value)} required type="email" />
             </label>
             <button disabled={isSubmitting} type="submit">Create Profile</button>
           </form>
@@ -196,19 +235,19 @@ function ActionModal({
         {mode === "income" || mode === "expense" ? (
           <form className="modal-form" onSubmit={submitTransaction}>
             <p className="drawer-hint">
-              Use save and add another to enter multiple {mode === "income" ? "income" : "expense"} rows without closing this drawer.
+              Use "Save &amp; add another" to enter multiple rows without closing this drawer.
             </p>
             <label>
               Amount
-              <input min="1" value={amount} onChange={(event) => setAmount(event.target.value)} required type="number" />
+              <input min="1" value={amount} onChange={(e) => setAmount(e.target.value)} required type="number" />
             </label>
             <label>
               Date
-              <input value={transactionDate} onChange={(event) => setTransactionDate(event.target.value)} required type="date" />
+              <input value={transactionDate} onChange={(e) => setTransactionDate(e.target.value)} required type="date" />
             </label>
             <label>
               Description
-              <input value={description} onChange={(event) => setDescription(event.target.value)} required />
+              <input value={description} onChange={(e) => setDescription(e.target.value)} required />
             </label>
             <button disabled={isSubmitting || !userId} type="submit">
               Add {mode === "income" ? "Income" : "Expense"}
@@ -219,7 +258,7 @@ function ActionModal({
               onClick={() => void saveTransaction(false)}
               type="button"
             >
-              Save And Add Another
+              Save &amp; Add Another
             </button>
           </form>
         ) : null}
@@ -227,24 +266,37 @@ function ActionModal({
         {mode === "goal" ? (
           <form className="modal-form" onSubmit={submitGoal}>
             <label>
-              Goal
-              <input value={goalName} onChange={(event) => setGoalName(event.target.value)} required />
+              Goal Name
+              <input value={goalName} onChange={(e) => setGoalName(e.target.value)} required />
             </label>
             <div className="form-grid">
               <label>
-                Target
-                <input min="1" value={targetAmount} onChange={(event) => setTargetAmount(event.target.value)} required type="number" />
+                Target Amount
+                <input min="1" value={targetAmount} onChange={(e) => setTargetAmount(e.target.value)} required type="number" />
               </label>
               <label>
-                Saved
-                <input min="0" value={currentAmount} onChange={(event) => setCurrentAmount(event.target.value)} required type="number" />
+                Already Saved
+                <input min="0" value={currentAmount} onChange={(e) => setCurrentAmount(e.target.value)} required type="number" />
               </label>
             </div>
             <label>
-              Deadline
-              <input value={deadline} onChange={(event) => setDeadline(event.target.value)} type="date" />
+              Deadline (optional)
+              <input value={deadline} onChange={(e) => setDeadline(e.target.value)} type="date" />
             </label>
             <button disabled={isSubmitting || !userId} type="submit">Add Goal</button>
+          </form>
+        ) : null}
+
+        {mode === "upload" ? (
+          <form className="modal-form" onSubmit={submitUpload}>
+            <p className="drawer-hint">
+              Upload an HDFC bank statement (.xlsx). Transactions are auto-categorised and inter-account transfers are excluded from your income &amp; expense totals.
+            </p>
+            <label>
+              Statement file (.xlsx)
+              <input ref={fileInputRef} accept=".xlsx" required type="file" />
+            </label>
+            <button disabled={isSubmitting || !userId} type="submit">Import Transactions</button>
           </form>
         ) : null}
       </section>
@@ -255,6 +307,7 @@ function ActionModal({
 function modalEyebrow(mode: Exclude<ModalMode, null>) {
   if (mode === "profile") return "Profile";
   if (mode === "goal") return "Goal Planning";
+  if (mode === "upload") return "Bank Statement";
   return "Transaction";
 }
 
@@ -262,5 +315,6 @@ function modalTitle(mode: Exclude<ModalMode, null>) {
   if (mode === "profile") return "Create a new financial profile";
   if (mode === "income") return "Add income";
   if (mode === "expense") return "Add expense";
+  if (mode === "upload") return "Import from HDFC statement";
   return "Create a goal";
 }

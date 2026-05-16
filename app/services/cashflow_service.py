@@ -68,7 +68,11 @@ def _expense_breakdown(db, user_id: UUID, total_expenses: float, start_date: dat
             func.sum(Transaction.amount).label("total"),
         )
         .join(Category, Transaction.category_id == Category.id, isouter=True)
-        .filter(Transaction.user_id == user_id, Transaction.type == "expense")
+        .filter(
+            Transaction.user_id == user_id,
+            Transaction.type == "expense",
+            Category.name != "Internal Transfer",
+        )
     )
 
     if start_date:

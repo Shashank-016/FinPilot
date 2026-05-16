@@ -31,9 +31,25 @@ class TransactionResponse(BaseModel):
     amount: float
     type: str
     category_id: Optional[UUID] = None
+    category_name: Optional[str] = None
     description: Optional[str] = None
     transaction_date: date
     created_at: datetime
+    source: Optional[str] = None
+    needs_review: bool = False
+    transaction_time: Optional[str] = None
+
+
+class CategoryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    type: str
+
+
+class CategoryUpdateRequest(BaseModel):
+    category_id: Optional[UUID] = None
 
 
 class CategorySummaryItem(BaseModel):
@@ -46,3 +62,8 @@ class UploadTransactionsResponse(BaseModel):
     message: str
     filename: str
     inserted: int
+    skipped: int
+
+
+class BulkDeleteRequest(BaseModel):
+    ids: list[UUID]
